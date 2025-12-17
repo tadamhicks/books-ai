@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-push: re-run the pre-commit hook logic (if present) on current staged content.
+if [[ -x ".githooks/pre-commit" ]]; then
+  exec ".githooks/pre-commit"
+fi
+
+exit 0
+
+

@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-scripts
+  namespace: books-ai
+data:
+  load.js: |
+    import http from "k6/http";
+    import { check, sleep } from "k6";
+
+    const BASE_URL = __ENV.BASE_URL || "http://books-api.books-ai.svc.cluster.local";
+
+    const baseTitles = JSON.parse(open("./titles.json"));
+    const titles = [];
+    while (titles.length < 200) {
+      titles.push(baseTitles[titles.length % baseTitles.length]);
+    }
+
+    let pointer = 0;
+
+    export const options = {
+      scenarios: {
+        steady_load: {
+          executor: "constant-arrival-rate",
+          rate: 30,
+          timeUnit: "1m",
+          duration: "15m",
+          preAllocatedVUs: 20,
+          maxVUs: 50,
+        },
+      },
+    };
+
+    function nextTitle() {
+      const item = titles[pointer % titles.length];
+      pointer += 1;
+      return item;
+    }
+
+    export default function () {
+      const item = nextTitle();
+      const search = http.get(`${BASE_URL}/books/title?title=${encodeURIComponent(item.title)}`);
+
+      if (search.status === 404) {
+        const payload = JSON.stringify({
+          title: item.title,
+          author_first_name: item.author_first_name,
+          author_last_name: item.author_last_name,
+        });
+        const createRes = http.post(`${BASE_URL}/books`, payload, {
+          headers: { "Content-Type": "application/json" },
+        });
+        check(createRes, {
+          "create status ok": (r) => [200, 201, 422].includes(r.status),
+        });
+      } else {
+        check(search, { "lookup ok": (r) => r.status === 200 });
+      }
+
+      sleep(1);
+    }
+  delete.js: |
+    import http from "k6/http";
+    import { check, sleep } from "k6";
+
+    const BASE_URL = __ENV.BASE_URL || "http://books-api.books-ai.svc.cluster.local";
+
+    const baseTitles = JSON.parse(open("./titles.json"));
+    const titles = [];
+    while (titles.length < 200) {
+      titles.push(baseTitles[titles.length % baseTitles.length]);
+    }
+
+    export const options = {
+      vus: 10,
+      iterations: 60,
+    };
+
+    function randomItem() {
+      return titles[Math.floor(Math.random() * titles.length)];
+    }
+
+    export default function () {
+      const item = randomItem();
+      const lookup = http.get(`${BASE_URL}/books/title?title=${encodeURIComponent(item.title)}`);
+      if (lookup.status === 200) {
+        const body = lookup.json();
+        const isbn = body?.isbn;
+        if (isbn) {
+          const res = http.del(`${BASE_URL}/books/${isbn}`);
+          check(res, { "delete attempted": (r) => [200, 404].includes(r.status) });
+        }
+      }
+      sleep(0.5);
+    }
+  titles.json: |
+    [
+      {"title":"Pride and Prejudice","author_first_name":"Jane","author_last_name":"Austen"},
+      {"title":"Moby-Dick","author_first_name":"Herman","author_last_name":"Melville"},
+      {"title":"1984","author_first_name":"George","author_last_name":"Orwell"},
+      {"title":"To Kill a Mockingbird","author_first_name":"Harper","author_last_name":"Lee"},
+      {"title":"Jane Eyre","author_first_name":"Charlotte","author_last_name":"Bronte"},
+      {"title":"Wuthering Heights","author_first_name":"Emily","author_last_name":"Bronte"},
+      {"title":"Great Expectations","author_first_name":"Charles","author_last_name":"Dickens"},
+      {"title":"The Great Gatsby","author_first_name":"F. Scott","author_last_name":"Fitzgerald"},
+      {"title":"Crime and Punishment","author_first_name":"Fyodor","author_last_name":"Dostoevsky"},
+      {"title":"War and Peace","author_first_name":"Leo","author_last_name":"Tolstoy"},
+      {"title":"Anna Karenina","author_first_name":"Leo","author_last_name":"Tolstoy"},
+      {"title":"Madame Bovary","author_first_name":"Gustave","author_last_name":"Flaubert"},
+      {"title":"The Brothers Karamazov","author_first_name":"Fyodor","author_last_name":"Dostoevsky"},
+      {"title":"Les Misérables","author_first_name":"Victor","author_last_name":"Hugo"},
+      {"title":"The Odyssey","author_first_name":"Homer","author_last_name":"Unknown"},
+      {"title":"The Iliad","author_first_name":"Homer","author_last_name":"Unknown"},
+      {"title":"The Catcher in the Rye","author_first_name":"J.D.","author_last_name":"Salinger"},
+      {"title":"The Hobbit","author_first_name":"J.R.R.","author_last_name":"Tolkien"},
+      {"title":"The Lord of the Rings","author_first_name":"J.R.R.","author_last_name":"Tolkien"},
+      {"title":"The Stranger","author_first_name":"Albert","author_last_name":"Camus"},
+      {"title":"The Plague","author_first_name":"Albert","author_last_name":"Camus"},
+      {"title":"Invisible Man","author_first_name":"Ralph","author_last_name":"Ellison"},
+      {"title":"Beloved","author_first_name":"Toni","author_last_name":"Morrison"},
+      {"title":"Song of Solomon","author_first_name":"Toni","author_last_name":"Morrison"},
+      {"title":"One Hundred Years of Solitude","author_first_name":"Gabriel","author_last_name":"Garcia Marquez"},
+      {"title":"Love in the Time of Cholera","author_first_name":"Gabriel","author_last_name":"Garcia Marquez"},
+      {"title":"The Sound and the Fury","author_first_name":"William","author_last_name":"Faulkner"},
+      {"title":"Absalom, Absalom!","author_first_name":"William","author_last_name":"Faulkner"},
+      {"title":"East of Eden","author_first_name":"John","author_last_name":"Steinbeck"},
+      {"title":"The Grapes of Wrath","author_first_name":"John","author_last_name":"Steinbeck"},
+      {"title":"Of Mice and Men","author_first_name":"John","author_last_name":"Steinbeck"},
+      {"title":"The Sun Also Rises","author_first_name":"Ernest","author_last_name":"Hemingway"},
+      {"title":"A Farewell to Arms","author_first_name":"Ernest","author_last_name":"Hemingway"},
+      {"title":"The Old Man and the Sea","author_first_name":"Ernest","author_last_name":"Hemingway"},
+      {"title":"Catch-22","author_first_name":"Joseph","author_last_name":"Heller"},
+      {"title":"Slaughterhouse-Five","author_first_name":"Kurt","author_last_name":"Vonnegut"},
+      {"title":"Brave New World","author_first_name":"Aldous","author_last_name":"Huxley"},
+      {"title":"The Picture of Dorian Gray","author_first_name":"Oscar","author_last_name":"Wilde"},
+      {"title":"Dracula","author_first_name":"Bram","author_last_name":"Stoker"},
+      {"title":"Frankenstein","author_first_name":"Mary","author_last_name":"Shelley"},
+      {"title":"Fahrenheit 451","author_first_name":"Ray","author_last_name":"Bradbury"},
+      {"title":"The Scarlet Letter","author_first_name":"Nathaniel","author_last_name":"Hawthorne"},
+      {"title":"The Adventures of Huckleberry Finn","author_first_name":"Mark","author_last_name":"Twain"},
+      {"title":"The Adventures of Tom Sawyer","author_first_name":"Mark","author_last_name":"Twain"},
+      {"title":"A Tale of Two Cities","author_first_name":"Charles","author_last_name":"Dickens"},
+      {"title":"Bleak House","author_first_name":"Charles","author_last_name":"Dickens"},
+      {"title":"Middlemarch","author_first_name":"George","author_last_name":"Eliot"},
+      {"title":"The Count of Monte Cristo","author_first_name":"Alexandre","author_last_name":"Dumas"},
+      {"title":"The Three Musketeers","author_first_name":"Alexandre","author_last_name":"Dumas"},
+      {"title":"The Trial","author_first_name":"Franz","author_last_name":"Kafka"},
+      {"title":"The Metamorphosis","author_first_name":"Franz","author_last_name":"Kafka"},
+      {"title":"The Name of the Rose","author_first_name":"Umberto","author_last_name":"Eco"},
+      {"title":"Don Quixote","author_first_name":"Miguel","author_last_name":"de Cervantes"},
+      {"title":"The Divine Comedy","author_first_name":"Dante","author_last_name":"Alighieri"},
+      {"title":"The Stranger in the Dunes","author_first_name":"Noone","author_last_name":"Nowhere"},
+      {"title":"The Lost City of Glass","author_first_name":"Alicia","author_last_name":"Mirage"},
+      {"title":"Quantum Dreams of Atlantis","author_first_name":"Fiona","author_last_name":"Wave"},
+      {"title":"The Clockwork Unicorn","author_first_name":"Harold","author_last_name":"Myth"},
+      {"title":"Echoes of Tomorrow","author_first_name":"Carter","author_last_name":"Holloway"},
+      {"title":"Midnight at the Neon Bazaar","author_first_name":"Lena","author_last_name":"Sol"},
+      {"title":"The Phoenix Ledger","author_first_name":"Dorian","author_last_name":"Ash"},
+      {"title":"Voyage to the Tenth Moon","author_first_name":"Ivy","author_last_name":"Sky"},
+      {"title":"The Librarian of Wind","author_first_name":"Orin","author_last_name":"Gale"},
+      {"title":"Shadows of the Silver Sea","author_first_name":"Mara","author_last_name":"Hallow"}
+    ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k6-load
+  namespace: books-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k6-load
+  template:
+    metadata:
+      labels:
+        app: k6-load
+    spec:
+      containers:
+        - name: k6
+          image: grafana/k6:0.54.0
+          args:
+            - run
+            - /scripts/load.js
+          env:
+            - name: BASE_URL
+              value: http://books-api.books-ai.svc.cluster.local
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: k6-scripts
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k6-delete-hourly
+  namespace: books-ai
+spec:
+  schedule: "0 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: k6-delete
+              image: grafana/k6:0.54.0
+              args:
+                - run
+                - /scripts/delete.js
+              env:
+                - name: BASE_URL
+                  value: http://books-api.books-ai.svc.cluster.local
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+          volumes:
+            - name: scripts
+              configMap:
+                name: k6-scripts
+

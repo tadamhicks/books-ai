@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: books-postgres-init
+  namespace: books-ai
+data:
+  init.sql: |
+    CREATE SCHEMA IF NOT EXISTS books;
+    CREATE TABLE IF NOT EXISTS books.books (
+      isbn VARCHAR(13) PRIMARY KEY,
+      title VARCHAR(512) NOT NULL,
+      author_first_name VARCHAR(256) NOT NULL,
+      author_last_name VARCHAR(256) NOT NULL,
+      summary TEXT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_books_title ON books.books (title);
+    CREATE INDEX IF NOT EXISTS idx_books_author_last ON books.books (author_last_name);
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: books-postgres
+  namespace: books-ai
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: books-postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: books-postgres
+  namespace: books-ai
+spec:
+  serviceName: books-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: books-postgres
+  template:
+    metadata:
+      labels:
+        app: books-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              value: books
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: books-ai-secrets
+                  key: database-password
+            - name: POSTGRES_DB
+              value: books
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init-sql
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: init-sql
+          configMap:
+            name: books-postgres-init
+            items:
+              - key: init.sql
+                path: init.sql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+
+
+
