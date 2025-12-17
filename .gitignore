@@ -45,7 +45,7 @@ id_ed25519
 
 # ---- Kubernetes: never commit real secrets ----
 k8s/secrets*.yaml
-!k8s/secrets.example.yaml
+k8s/secrets.example.yaml
 
 # ---- IaC (OpenTofu/Terraform) ----
 .terraform/
