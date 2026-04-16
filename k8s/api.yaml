@@ -28,9 +28,10 @@ spec:
     spec:
       containers:
         - name: api
-          image: tadamhicks/books-ai-api:0.1.7
+          image: tadamhicks/books-ai-api:0.3.0
           imagePullPolicy: IfNotPresent
           env:
+            # ── Application secrets ───────────────────────────────────
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -41,29 +42,56 @@ spec:
                 secretKeyRef:
                   name: books-ai-secrets
                   key: bedrock-api-key
-            - name: AWS_ACCESS_KEY_ID
-              valueFrom:
-                secretKeyRef:
-                  name: books-ai-secrets
-                  key: bedrock-access-key-id
-            - name: AWS_SECRET_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: books-ai-secrets
-                  key: bedrock-secret-access-key
-            - name: AWS_SESSION_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: books-ai-secrets
-                  key: bedrock-session-token
+            # ── AWS / Bedrock configuration ──────────────────────────
             - name: BEDROCK_REGION
               value: us-west-2
             - name: BEDROCK_MODEL_ID
               value: mistral.mistral-large-2402-v1:0
+            # Disable IMDS credential lookup — we use Bearer token auth
+            # via AWS_BEARER_TOKEN_BEDROCK.  Without this, boto3 tries the
+            # EC2 metadata service on every client creation, adding ~1 s
+            # of latency (PUT /latest/api/token timeout + GET 401).
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+            # ── OpenTelemetry / Traceloop ─────────────────────────────
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: groundcover-sensor.groundcover.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "grpc"
             - name: OTEL_EXPORTER_OTLP_INSECURE
               value: "true"
+            - name: OTEL_SERVICE_NAME
+              value: books-api
+            - name: SERVICE_VERSION
+              value: "0.3.0"
+            # Capture prompt/completion content in OpenLLMetry spans
+            - name: TRACELOOP_TRACE_CONTENT
+              value: "true"
+            # Exclude health-check endpoints from OTEL instrumentation
+            # to reduce span noise from readiness/liveness probes.
+            - name: OTEL_PYTHON_EXCLUDED_URLS
+              value: "health"
+            # ── Kubernetes Downward API (for Groundcover eBPF correlation) ─
+            # Groundcover needs these resource attributes on OTEL spans
+            # to correlate them with eBPF-observed network traffic.
+            - name: K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K8S_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_CONTAINER_NAME
+              value: api
           ports:
             - containerPort: 8000
           readinessProbe:
@@ -78,4 +106,3 @@ spec:
               port: 8000
             initialDelaySeconds: 10
             periodSeconds: 15
-

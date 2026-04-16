@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -9,9 +10,12 @@ from app.api import books
 from app.db.session import Base, engine
 from app.tracing import configure_tracer
 
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
     configure_tracer()
+    logger.info("Tracer and OTEL Logs SDK configured — logs exported via OTLP with trace correlation")
     app = FastAPI(title="books-ai API", version="0.1.0")
 
     @app.get("/health")
@@ -45,6 +49,7 @@ async def _wait_for_db(max_attempts: int = 10, delay: float = 2.0) -> None:
 @app.on_event("startup")
 async def on_startup() -> None:
     await _wait_for_db()
+    logger.info("Database ready — books-api startup complete")
 
 
 

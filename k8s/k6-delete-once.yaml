@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k6-delete-once
+  namespace: books-ai
+spec:
+  ttlSecondsAfterFinished: 300  # Clean up after 5 minutes
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: k6-delete
+          image: grafana/k6:0.54.0
+          args:
+            - run
+            - /scripts/delete.js
+          env:
+            - name: BASE_URL
+              value: http://books-api.books-ai.svc.cluster.local
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: k6-scripts
